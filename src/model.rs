@@ -1,103 +1,97 @@
 use std::path::Path;
 
+use wgpu::util::DeviceExt;
+
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 struct Vertex {
     position: [f32; 3],
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+struct MeshInfo {
+    vertex_offset: u32,
+    index_offset: u32,
     ambient_color: [f32; 3],
-    diffuse_color: [f32, 3],
+    diffuse_color: [f32; 3],
 }
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct ComputeInfo {
-    num_vertices: u32,
-    num_indices: u32,
+    num_meshes: u32,
 }
 
-fn layout_entries() -> Vec<wgpu::BindGroupLayoutEntry> {
-    vec![
-        // Vertices
-        wgpu::BindGroupLayoutEntry {
-            binding: 0,
-            visibility: wgpu::ShaderStages::COMPUTE,
-            ty: wgpu::BindingType::Buffer {
-                ty: wgpu::BufferBindingType::Storage { read_only: true },
-                has_dynamic_offset: false,
-                min_binding_size: None,
+pub fn bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
+    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("compute_bind_group_layout"),
+        entries: &[
+            // Vertices
+            wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
             },
-            count: None,
-        },
-        // Indices
-        wgpu::BindGroupLayoutEntry {
-            binding: 1,
-            visibility: wgpu::ShaderStages::COMPUTE,
-            ty: wgpu::BindingType::Buffer {
-                ty: wgpu::BufferBindingType::Storage { read_only: true },
-                has_dynamic_offset: false,
-                min_binding_size: None,
+            // Indices
+            wgpu::BindGroupLayoutEntry {
+                binding: 1,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
             },
-            count: None,
-        },
-        // ComputeInfo
-        wgpu::BindGroupLayoutEntry {
-            binding: 2,
-            visibility: wgpu::ShaderStages::COMPUTE,
-            ty: wgpu::BindingType::Buffer {
-                ty: wgpu::BufferBindingType::Uniform,
-                has_dynamic_offset: false,
-                min_binding_size: None,
+            // MeshInfo
+            wgpu::BindGroupLayoutEntry {
+                binding: 2,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
             },
-            count: None,
-        },
-    ]
-}
-
-fn bind_group_entries(
-    vertex_buffer: wgpu::Buffer,
-    index_buffer: wgpu::Buffer,
-    color_buffer: wgpu::Buffer,
-    info_buffer: wgpu::Buffer,
-) -> Vec<wgpu::BindGroupEntry> {
-    vec![
-        // Vertices
-        wgpu::BindGroupEntry {
-            binding: 0,
-            resource: vertex_buffer.as_entire_binding(),
-        },
-        // Indices
-        wgpu::BindGroupEntry {
-            binding: 1,
-            resource: index_buffer.as_entire_binding(),
-        },
-        // ComputeInfo
-        wgpu::BindGroupEntry {
-            binding: 2,
-            resource: info_buffer.as_entire_binding(),
-        },
-    ]
+            // ComputeInfo
+            wgpu::BindGroupLayoutEntry {
+                binding: 3,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+        ],
+    })
 }
 
 /*
 * load model from .obj file
 * a model can contain several meshes
 * a mesh will be one or more connected triangle faces
-* we step through one mesh at a time
 * we assume the mesh uses a material (mtl file)
 * we assume we are not using textures, only uniformly colored meshes
 * we use only the ambient and diffuse color of the mesh
 * the ambient color is emitted light
 * the diffuse color is the 100% diffusely reflected color of the mesh
-* we attach the color info to each vertex (slightly space infefficient)
-* we concatenate all the vertices of all the meshes
-* we combine all the index vectors as well, here we need to add offsets
 * we create one vertex and one index buffer for the whole obj file
-* we lastly create a computeinfo buffer with the length of the vertex and index buffers
-* we return the bindgroup of the 3 buffers so that it can be used for whatever
+* we create a meshinfo buffer with the offsets for each section of the vertex and index buffers
+* the meshinfo buffer also contains the color info for each mesh
+* we lastly create a computeinfo buffer with the length of the meshinfo buffer
+* we return the bindgroup of the 4 buffers so that it can be used for whatever
 */
-fn load<P: AsRef<Path>>(
+pub fn load<P: AsRef<Path>>(
     device: &wgpu::Device,
-    queue: &wgpu::Queue,
     layout: &wgpu::BindGroupLayout,
     path: P,
 ) -> Result<wgpu::BindGroup, tobj::LoadError> {
@@ -106,40 +100,97 @@ fn load<P: AsRef<Path>>(
     let vertices = obj_models
         .iter()
         .map(|m| {
-            let mat_id = m.mesh
-                .material_id
-                .expect("mesh missing material id");
-            (0..m.mesh.positions.len() / 3).into_iter()
-            .map(|i| {
-                Vertex {
-                    position: [
-                        m.mesh.positions[i * 3],
-                        m.mesh.positions[i * 3 + 1],
-                        m.mesh.positions[i * 3 + 2],
-                    ],
-                    ambient_color: obj_materials[mat_id].ambient.expect("mtl missing ambient color"),
-                    diffuse_color: obj_materials[mat_id].diffuse,
-                }
+            (0..m.mesh.positions.len() / 3).into_iter().map(|i| Vertex {
+                position: [
+                    m.mesh.positions[i * 3],
+                    m.mesh.positions[i * 3 + 1],
+                    m.mesh.positions[i * 3 + 2],
+                ],
             })
-        }).flatten().collect::<Vec<Vertex>>();
+        })
+        .flatten()
+        .collect::<Vec<Vertex>>();
+
+    let mut mesh_info = Vec::new();
+    // could do this as well functionally with something like scan()
+    let mut vertex_offset = 0;
+    let mut index_offset = 0;
+    for m in &obj_models {
+        let mat_id = m.mesh.material_id.expect("mesh missing material id");
+        mesh_info.push(MeshInfo {
+            vertex_offset,
+            index_offset,
+            ambient_color: obj_materials[mat_id]
+                .ambient
+                .expect("mtl missing ambient color"),
+            diffuse_color: obj_materials[mat_id]
+                .diffuse
+                .expect("mtl missing diffuse color"),
+        });
+        vertex_offset += <usize as TryInto<u32>>::try_into(m.mesh.positions.len() / 3)
+            .expect("too many vertices");
+        index_offset +=
+            <usize as TryInto<u32>>::try_into(m.mesh.indices.len()).expect("too many indices");
+    }
 
     let indices = obj_models
         .iter()
-        .map(|m| {
-            m.mesh.indices
-        }).flatten().collect::<Vec<u32>>();
-        
-    
-    for m in obj_models {
-        let mesh = m.mesh;
-        let mat_id = mesh
-            .material_id
-            .expect("Mesh does not have a material!!! Unrenderable");
-        let amb_col = obj_materials[mat_id].ambient;
-        let dif_col = obj_materials[mat_id].diffuse;
-    }
-    device.create_bind_group(&wgpu::BindGroupDescriptor {
+        .map(|m| m.mesh.indices.clone()) // should avoid unnecessary clone
+        .flatten()
+        .collect::<Vec<u32>>();
+
+    let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("Vertex Buffer"),
+        contents: bytemuck::cast_slice(&vertices),
+        usage: wgpu::BufferUsages::STORAGE,
+    });
+
+    let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("Index Buffer"),
+        contents: bytemuck::cast_slice(&indices),
+        usage: wgpu::BufferUsages::STORAGE,
+    });
+
+    let mesh_info_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("Mesh Info Buffer"),
+        contents: bytemuck::cast_slice(&mesh_info),
+        usage: wgpu::BufferUsages::STORAGE,
+    });
+
+    let compute_info = ComputeInfo {
+        num_meshes: mesh_info.len().try_into().expect("too many meshes"),
+    };
+
+    let compute_info_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("Compute Info Buffer"),
+        contents: bytemuck::cast_slice(&[compute_info]),
+        usage: wgpu::BufferUsages::UNIFORM,
+    });
+
+    Ok(device.create_bind_group(&wgpu::BindGroupDescriptor {
         layout,
-        entries: bind_group_entries(),
-    })
+        entries: &[
+            // Vertices
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: vertex_buffer.as_entire_binding(),
+            },
+            // Indices
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: index_buffer.as_entire_binding(),
+            },
+            // MeshInfo
+            wgpu::BindGroupEntry {
+                binding: 2,
+                resource: mesh_info_buffer.as_entire_binding(),
+            },
+            // ComputeInfo
+            wgpu::BindGroupEntry {
+                binding: 3,
+                resource: compute_info_buffer.as_entire_binding(),
+            },
+        ],
+        label: Some("compute_bind_group"),
+    }))
 }

@@ -16,6 +16,7 @@ struct State {
     render_pipeline: wgpu::RenderPipeline,
     compute_pipeline: wgpu::ComputePipeline,
     texture_bind_group: wgpu::BindGroup,
+    model_bind_group: wgpu::BindGroup,
 }
 
 impl State {
@@ -53,7 +54,12 @@ impl State {
             .unwrap();
 
         surface.configure(&device, &surface_config);
+        // We now have a surface we can draw to using our device and queue
 
+        /*
+         * We need to create a special texture buffer to draw our result to
+         * since we cannot draw directly to the screen from a compute shader
+         */
         let compute_texture = device.create_texture(&wgpu::TextureDescriptor {
             size: wgpu::Extent3d {
                 width: size.width,
@@ -64,7 +70,7 @@ impl State {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::STORAGE_BINDING,
             label: Some("compute_texture"),
             view_formats: &[],
         });
@@ -75,10 +81,11 @@ impl State {
 
         let texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("texture_bind_group_layout"),
                 entries: &[
                     wgpu::BindGroupLayoutEntry {
                         binding: 0,
-                        visibility: wgpu::ShaderStages::COMPUTE | wgpu::ShaderStages::FRAGMENT,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
                         ty: wgpu::BindingType::Texture {
                             sample_type: wgpu::TextureSampleType::Float { filterable: true },
                             view_dimension: wgpu::TextureViewDimension::D2,
@@ -88,14 +95,14 @@ impl State {
                     },
                     wgpu::BindGroupLayoutEntry {
                         binding: 1,
-                        visibility: wgpu::ShaderStages::COMPUTE | wgpu::ShaderStages::FRAGMENT,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
                         ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                         count: None,
                     },
                 ],
-                label: Some("texture_bind_group_layout"),
             });
         let texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("texture_bind_group"),
             layout: &texture_bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
@@ -107,16 +114,47 @@ impl State {
                     resource: wgpu::BindingResource::Sampler(&compute_sampler),
                 },
             ],
-            label: Some("texture_bind_group"),
+        });
+
+        let model_bind_group_layout = model::bind_group_layout(&device);
+        let model_bind_group =
+            model::load(&device, &model_bind_group_layout, "res/cornell_box.obj").unwrap();
+
+        let pt_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("pt_bind_group_layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::StorageTexture {
+                        access: wgpu::StorageTextureAccess::WriteOnly,
+                        format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                    },
+                    count: None,
+                }],
+            });
+
+        let pt_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("pt_bind_group"),
+            layout: &pt_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(&compute_texture_view),
+            }],
         });
 
         let compute_shader = device.create_shader_module(wgpu::include_wgsl!("compute.wgsl"));
         let draw_shader = device.create_shader_module(wgpu::include_wgsl!("draw.wgsl"));
 
+        /*
+         * we will have one bind group for the texture we are drawing to
+         * and one bind group for the model
+         */
         let compute_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Compute Pipeline Layout"),
-                bind_group_layouts: &[&texture_bind_group_layout],
+                bind_group_layouts: &[&pt_bind_group_layout, &model_bind_group_layout],
                 push_constant_ranges: &[],
             });
 
@@ -127,6 +165,10 @@ impl State {
             entry_point: "main",
         });
 
+        /*
+         * the render pipeline only needs the finished texture
+         * and will copy the result onto the screen
+         */
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
@@ -175,6 +217,7 @@ impl State {
             render_pipeline,
             compute_pipeline,
             texture_bind_group,
+            model_bind_group,
         }
     }
 
@@ -202,17 +245,20 @@ impl State {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Command Encoder"),
             });
+        // first the compute pass will calculate the path tracing result
         {
             let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                 label: Some("Compute Pass"),
             });
             compute_pass.set_pipeline(&self.compute_pipeline);
             compute_pass.set_bind_group(0, &self.texture_bind_group, &[]);
+            compute_pass.set_bind_group(1, &self.model_bind_group, &[]);
 
             // 4 light paths per pixel
             compute_pass.dispatch_workgroups(self.size.width, self.size.height, 4);
         }
 
+        // then the render pass will copy the result onto the screen
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
