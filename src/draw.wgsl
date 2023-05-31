@@ -1,5 +1,13 @@
+struct PtInfo {
+    width: u32,
+    height: u32,
+    samples_per_pixel: u32,
+}
+
 @group(0) @binding(0)
-var texture: texture_3d<f32>;
+var<storage, read_write> pt: array<vec4<f32>>;
+@group(0) @binding(1)
+var<uniform> pt_info: PtInfo;
 
 @vertex
 fn vs_main(
@@ -21,7 +29,7 @@ fn vs_main(
 @fragment
 fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
     let coords = vec3<u32>(u32(pos.x), u32(pos.y), u32(0));
-    //copy color from compute shader path trace texture buffer
-    let color = textureLoad(texture, coords, 0);
+    //copy color from path trace storage buffer
+    let color = pt[coords.x + coords.y*pt_info.width];
     return color;
 }

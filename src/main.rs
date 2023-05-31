@@ -66,7 +66,7 @@ impl State {
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[pt.texture_bind_group_layout()],
+                bind_group_layouts: &[pt.bind_group_layout()],
                 push_constant_ranges: &[],
             });
 
@@ -157,7 +157,7 @@ impl State {
             });
 
             render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.set_bind_group(0, self.pt.texture_bind_group(), &[]);
+            render_pass.set_bind_group(0, self.pt.bind_group(), &[]);
             render_pass.draw(0..3, 0..1);
         }
 

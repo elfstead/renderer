@@ -1,11 +1,11 @@
 use crate::model;
+use wgpu::util::DeviceExt;
 
 pub struct Pt {
-    texture: wgpu::Texture,
-    render_bind_group_layout: wgpu::BindGroupLayout,
-    compute_bind_group_layout: wgpu::BindGroupLayout,
-    render_bind_group: wgpu::BindGroup,
-    compute_bind_group: wgpu::BindGroup,
+    pt_buffer: wgpu::Buffer,
+    pt_info_buffer: wgpu::Buffer,
+    pt_bind_group_layout: wgpu::BindGroupLayout,
+    pt_bind_group: wgpu::BindGroup,
     compute_pipeline: wgpu::ComputePipeline,
     samples_per_pixel: u32,
     size: winit::dpi::PhysicalSize<u32>,
@@ -24,7 +24,7 @@ impl Pt {
          * We need to create a special texture buffer to draw our result to
          * since we cannot draw directly to the screen from a compute shader
          */
-        let texture = create_texture(device, size, samples_per_pixel);
+        let (pt_buffer, pt_info_buffer) = create_pt_bufs(device, size, samples_per_pixel);
 
         /*
          * The fragment and compute shaders will both access the same pt texture
@@ -33,42 +33,35 @@ impl Pt {
          * for both purposes by setting access: ReadWrite or something, havent tried yet
          */
 
-        let render_bind_group_layout =
+        let pt_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("pt_render_bind_group_layout"),
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                        view_dimension: wgpu::TextureViewDimension::D3,
-                        multisampled: false,
+                label: Some("pt_bind_group_layout"),
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::COMPUTE | wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                }],
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::COMPUTE | wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                ],
             });
 
-        let compute_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("pt_compute_bind_group_layout"),
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::StorageTexture {
-                        access: wgpu::StorageTextureAccess::WriteOnly,
-                        format: wgpu::TextureFormat::Rgba32Float,
-                        view_dimension: wgpu::TextureViewDimension::D3,
-                    },
-                    count: None,
-                }],
-            });
-
-        let (render_bind_group, compute_bind_group) = create_render_compute_bind_groups(
-            device,
-            &texture,
-            &render_bind_group_layout,
-            &compute_bind_group_layout,
-        );
+        let pt_bind_group =
+            create_pt_bind_group(device, &pt_buffer, &pt_info_buffer, &pt_bind_group_layout);
         let compute_shader = device.create_shader_module(wgpu::include_wgsl!("compute.wgsl"));
 
         /*
@@ -78,7 +71,7 @@ impl Pt {
         let compute_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Compute Pipeline Layout"),
-                bind_group_layouts: &[&compute_bind_group_layout, &model_bind_group_layout],
+                bind_group_layouts: &[&pt_bind_group_layout, &model_bind_group_layout],
                 push_constant_ranges: &[],
             });
 
@@ -90,11 +83,10 @@ impl Pt {
         });
 
         Pt {
-            texture,
-            render_bind_group_layout,
-            compute_bind_group_layout,
-            render_bind_group,
-            compute_bind_group,
+            pt_buffer,
+            pt_info_buffer,
+            pt_bind_group_layout,
+            pt_bind_group,
             compute_pipeline,
             samples_per_pixel,
             size,
@@ -107,76 +99,83 @@ impl Pt {
             label: Some("Compute Pass"),
         });
         compute_pass.set_pipeline(&self.compute_pipeline);
-        compute_pass.set_bind_group(0, &self.compute_bind_group, &[]);
+        compute_pass.set_bind_group(0, &self.pt_bind_group, &[]);
         compute_pass.set_bind_group(1, &self.model_bind_group, &[]);
 
         compute_pass.dispatch_workgroups(self.size.width, self.size.height, self.samples_per_pixel);
     }
 
-    pub fn texture_bind_group_layout(&self) -> &wgpu::BindGroupLayout {
-        &self.render_bind_group_layout
+    pub fn bind_group_layout(&self) -> &wgpu::BindGroupLayout {
+        &self.pt_bind_group_layout
     }
 
-    pub fn texture_bind_group(&self) -> &wgpu::BindGroup {
-        &self.render_bind_group
+    pub fn bind_group(&self) -> &wgpu::BindGroup {
+        &self.pt_bind_group
     }
 
     pub fn resize(&mut self, device: &wgpu::Device, new_size: winit::dpi::PhysicalSize<u32>) {
         self.size = new_size;
-        self.texture = create_texture(device, new_size, self.samples_per_pixel);
-        (self.render_bind_group, self.compute_bind_group) = create_render_compute_bind_groups(
+        (self.pt_buffer, self.pt_info_buffer) =
+            create_pt_bufs(device, new_size, self.samples_per_pixel);
+        self.pt_bind_group = create_pt_bind_group(
             device,
-            &self.texture,
-            &self.render_bind_group_layout,
-            &self.compute_bind_group_layout,
+            &self.pt_buffer,
+            &self.pt_info_buffer,
+            &self.pt_bind_group_layout,
         );
     }
 }
 
-fn create_texture(
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct PtInfo {
+    width: u32,
+    height: u32,
+    samples_per_pixel: u32,
+}
+
+fn create_pt_bufs(
     device: &wgpu::Device,
     size: winit::dpi::PhysicalSize<u32>,
     samples_per_pixel: u32,
-) -> wgpu::Texture {
-    device.create_texture(&wgpu::TextureDescriptor {
-        size: wgpu::Extent3d {
-            width: size.width,
-            height: size.height,
-            depth_or_array_layers: samples_per_pixel,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D3,
-        format: wgpu::TextureFormat::Rgba32Float,
-        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::STORAGE_BINDING,
-        label: Some("compute_texture"),
-        view_formats: &[],
-    })
+) -> (wgpu::Buffer, wgpu::Buffer) {
+    let pt_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("pt_buffer"),
+        size: (4 * samples_per_pixel * size.width * size.height).into(),
+        usage: wgpu::BufferUsages::STORAGE,
+        mapped_at_creation: false,
+    });
+    let pt_info = PtInfo {
+        width: size.width,
+        height: size.height,
+        samples_per_pixel,
+    };
+    let pt_info_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("Path Trace Info Buffer"),
+        contents: bytemuck::cast_slice(&[pt_info]),
+        usage: wgpu::BufferUsages::UNIFORM,
+    });
+    (pt_buffer, pt_info_buffer)
 }
 
-fn create_render_compute_bind_groups(
+fn create_pt_bind_group(
     device: &wgpu::Device,
-    texture: &wgpu::Texture,
-    render_bg_layout: &wgpu::BindGroupLayout,
-    compute_bg_layout: &wgpu::BindGroupLayout,
-) -> (wgpu::BindGroup, wgpu::BindGroup) {
-    let texture_view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-    let render_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("pt_render_bind_group"),
-        layout: render_bg_layout,
-        entries: &[wgpu::BindGroupEntry {
-            binding: 0,
-            resource: wgpu::BindingResource::TextureView(&texture_view),
-        }],
-    });
-
-    let compute_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("pt_compute_bind_group"),
-        layout: compute_bg_layout,
-        entries: &[wgpu::BindGroupEntry {
-            binding: 0,
-            resource: wgpu::BindingResource::TextureView(&texture_view),
-        }],
-    });
-    (render_bind_group, compute_bind_group)
+    pt_buffer: &wgpu::Buffer,
+    pt_info_buffer: &wgpu::Buffer,
+    pt_bg_layout: &wgpu::BindGroupLayout,
+) -> wgpu::BindGroup {
+    device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: Some("pt_bind_group"),
+        layout: pt_bg_layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: pt_buffer.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: pt_info_buffer.as_entire_binding(),
+            },
+        ],
+    })
 }
