@@ -1,5 +1,5 @@
 @group(0) @binding(0)
-var texture: texture_2d<f32>;
+var texture: texture_3d<f32>;
 
 @vertex
 fn vs_main(
@@ -20,7 +20,7 @@ fn vs_main(
 
 @fragment
 fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
-    let coords = vec2<u32>(u32(pos.x), u32(pos.y));
+    let coords = vec3<u32>(u32(pos.x), u32(pos.y), u32(0));
     //copy color from compute shader path trace texture buffer
     let color = textureLoad(texture, coords, 0);
     return color;

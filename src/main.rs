@@ -1,4 +1,5 @@
 mod model;
+mod pt;
 use std::time::{Duration, Instant};
 use winit::{
     event::*,
@@ -14,14 +15,7 @@ struct State {
     queue: wgpu::Queue,
     surface_config: wgpu::SurfaceConfiguration,
     render_pipeline: wgpu::RenderPipeline,
-    compute_pipeline: wgpu::ComputePipeline,
-    texture_bind_group: wgpu::BindGroup,
-    model_bind_group: wgpu::BindGroup,
-    pt_bind_group: wgpu::BindGroup,
-    samples_per_pixel: u32,
-    pt_texture: wgpu::Texture,
-    pt_bind_group_layout: wgpu::BindGroupLayout,
-    texture_bind_group_layout: wgpu::BindGroupLayout,
+    pt: pt::Pt,
 }
 
 impl State {
@@ -61,69 +55,9 @@ impl State {
         surface.configure(&device, &surface_config);
         // We now have a surface we can draw to using our device and queue
 
-        let samples_per_pixel = 4;
+        let pt = pt::Pt::new(&device, size);
 
-        let model_bind_group_layout = model::bind_group_layout(&device);
-        let model_bind_group =
-            model::load(&device, &model_bind_group_layout, "res/cornell_box.obj").unwrap();
-
-        /*
-         * The fragment and compute shaders will both access the same pt texture
-         * but one will do so as a sampled texture and the other as a storage texture
-         * note that wgpu might unofficially support using only the pt_bind_group
-         * for both purposes by setting access: ReadWrite or something, havent tried yet
-         */
-
-        let texture_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("texture_bind_group_layout"),
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                        view_dimension: wgpu::TextureViewDimension::D3,
-                        multisampled: false,
-                    },
-                    count: None,
-                }],
-            });
-
-        let pt_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("pt_bind_group_layout"),
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::StorageTexture {
-                        access: wgpu::StorageTextureAccess::WriteOnly,
-                        format: wgpu::TextureFormat::Rgba32Float,
-                        view_dimension: wgpu::TextureViewDimension::D3,
-                    },
-                    count: None,
-                }],
-            });
-
-        let compute_shader = device.create_shader_module(wgpu::include_wgsl!("compute.wgsl"));
         let draw_shader = device.create_shader_module(wgpu::include_wgsl!("draw.wgsl"));
-
-        /*
-         * we will have one bind group for the texture we are drawing to
-         * and one bind group for the model
-         */
-        let compute_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("Compute Pipeline Layout"),
-                bind_group_layouts: &[&pt_bind_group_layout, &model_bind_group_layout],
-                push_constant_ranges: &[],
-            });
-
-        let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("Compute Pipeline"),
-            layout: Some(&compute_pipeline_layout),
-            module: &compute_shader,
-            entry_point: "main",
-        });
 
         /*
          * the render pipeline only needs the finished texture
@@ -132,7 +66,7 @@ impl State {
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[&texture_bind_group_layout],
+                bind_group_layouts: &[pt.texture_bind_group_layout()],
                 push_constant_ranges: &[],
             });
 
@@ -175,59 +109,8 @@ impl State {
             queue,
             surface_config,
             render_pipeline,
-            compute_pipeline,
-            texture_bind_group,
-            model_bind_group,
-            pt_bind_group,
-            samples_per_pixel,
-            pt_bind_group_layout,
-            texture_bind_group_layout,
+            pt,
         }
-    }
-
-    fn create_pt_texture(
-        device: &wgpu::Device,
-        size: winit::dpi::PhysicalSize<u32>,
-        samples_per_pixel: u32,
-    ) {
-        /*
-         * We need to create a special texture buffer to draw our result to
-         * since we cannot draw directly to the screen from a compute shader
-         */
-        let pt_texture = device.create_texture(&wgpu::TextureDescriptor {
-            size: wgpu::Extent3d {
-                width: size.width,
-                height: size.height,
-                depth_or_array_layers: samples_per_pixel,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba32Float,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::STORAGE_BINDING,
-            label: Some("compute_texture"),
-            view_formats: &[],
-        });
-
-        let pt_texture_view = pt_texture.create_view(&wgpu::TextureViewDescriptor::default());
-
-        let texture_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("texture_bind_group"),
-            layout: texture_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::TextureView(&pt_texture_view),
-            }],
-        });
-
-        let pt_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("pt_bind_group"),
-            layout: pt_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::TextureView(&pt_texture_view),
-            }],
-        });
     }
 
     fn resize(&mut self, new_size: winit::dpi::PhysicalSize<u32>) {
@@ -236,6 +119,7 @@ impl State {
             self.surface_config.width = new_size.width;
             self.surface_config.height = new_size.height;
             self.surface.configure(&self.device, &self.surface_config);
+            self.pt.resize(&self.device, new_size);
         }
     }
 
@@ -255,17 +139,7 @@ impl State {
                 label: Some("Command Encoder"),
             });
         // first the compute pass will calculate the path tracing result
-        {
-            let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: Some("Compute Pass"),
-            });
-            compute_pass.set_pipeline(&self.compute_pipeline);
-            compute_pass.set_bind_group(0, &self.pt_bind_group, &[]);
-            compute_pass.set_bind_group(1, &self.model_bind_group, &[]);
-
-            // 4 light paths per pixel
-            compute_pass.dispatch_workgroups(self.size.width, self.size.height, 4);
-        }
+        self.pt.encode_compute(&mut encoder);
 
         // then the render pass will copy the result onto the screen
         {
@@ -283,7 +157,7 @@ impl State {
             });
 
             render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.set_bind_group(0, &self.texture_bind_group, &[]);
+            render_pass.set_bind_group(0, self.pt.texture_bind_group(), &[]);
             render_pass.draw(0..3, 0..1);
         }
 
