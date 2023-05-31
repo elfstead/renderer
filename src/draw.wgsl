@@ -1,3 +1,6 @@
+@group(0) @binding(0)
+var texture: texture_2d<f32>;
+
 @vertex
 fn vs_main(
     @builtin(vertex_index) in_vertex_index: u32,
@@ -16,7 +19,9 @@ fn vs_main(
 }
 
 @fragment
-fn fs_main() -> @location(0) vec4<f32> {
+fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
+    let coords = vec2<u32>(u32(pos.x), u32(pos.y));
     //copy color from compute shader path trace texture buffer
-    return vec4<f32>(0.3, 0.2, 0.1, 1.0);
+    let color = textureLoad(texture, coords, 0);
+    return color;
 }
