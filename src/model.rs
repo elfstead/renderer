@@ -15,10 +15,15 @@ struct Vertex {
 struct MeshInfo {
     vertex_offset: u32,
     index_offset: u32,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
+struct Colors {
     ambient_color: [f32; 3],
     _padding: u32,
     diffuse_color: [f32; 3],
-    _padding2: [u32; 3],
+    _padding2: u32,
 }
 
 #[repr(C)]
@@ -64,9 +69,20 @@ pub fn bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
                 },
                 count: None,
             },
-            // ComputeInfo
+            // Colors
             wgpu::BindGroupLayoutEntry {
                 binding: 3,
+                visibility: wgpu::ShaderStages::COMPUTE,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            },
+            // ComputeInfo
+            wgpu::BindGroupLayoutEntry {
+                binding: 4,
                 visibility: wgpu::ShaderStages::COMPUTE,
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
@@ -117,6 +133,7 @@ pub fn load<P: AsRef<Path>>(
         .collect::<Vec<Vertex>>();
 
     let mut mesh_info = Vec::new();
+    let mut colors = Vec::new();
     // could do this as well functionally with something like scan()
     let mut vertex_offset = 0;
     let mut index_offset = 0;
@@ -130,6 +147,9 @@ pub fn load<P: AsRef<Path>>(
         mesh_info.push(MeshInfo {
             vertex_offset,
             index_offset,
+        });
+
+        colors.push(Colors {
             ambient_color: obj_materials[mat_id]
                 .ambient
                 .expect("mtl missing ambient color"),
@@ -137,7 +157,7 @@ pub fn load<P: AsRef<Path>>(
                 .diffuse
                 .expect("mtl missing diffuse color"),
             _padding: 0,
-            _padding2: [0, 0, 0],
+            _padding2: 0,
         });
         vertex_offset += <usize as TryInto<u32>>::try_into(m.mesh.positions.len() / 3)
             .expect("too many vertices");
@@ -148,14 +168,17 @@ pub fn load<P: AsRef<Path>>(
     mesh_info.push(MeshInfo {
         vertex_offset,
         index_offset,
+    });
+
+    colors.push(Colors {
         ambient_color: [0.0, 0.0, 0.0],
         diffuse_color: [0.0, 0.0, 0.0],
         _padding: 0,
-        _padding2: [0, 0, 0],
+        _padding2: 0,
     });
 
-    for m in &mesh_info {
-        let ccc = m.diffuse_color;
+    for c in &colors {
+        let ccc = c.diffuse_color;
         println!("{} {} {}", ccc[0], ccc[1], ccc[2]);
     }
 
@@ -254,10 +277,15 @@ pub fn load<P: AsRef<Path>>(
         usage: wgpu::BufferUsages::STORAGE,
     });
 
-    mesh_info[5].diffuse_color = [1.0, 0.0, 0.0];
     let mesh_info_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("Mesh Info Buffer"),
         contents: bytemuck::cast_slice(&mesh_info),
+        usage: wgpu::BufferUsages::STORAGE,
+    });
+
+    let colors_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("Colors Buffer"),
+        contents: bytemuck::cast_slice(&colors),
         usage: wgpu::BufferUsages::STORAGE,
     });
 
@@ -290,9 +318,14 @@ pub fn load<P: AsRef<Path>>(
                 binding: 2,
                 resource: mesh_info_buffer.as_entire_binding(),
             },
-            // ComputeInfo
+            // Colors
             wgpu::BindGroupEntry {
                 binding: 3,
+                resource: colors_buffer.as_entire_binding(),
+            },
+            // ComputeInfo
+            wgpu::BindGroupEntry {
+                binding: 4,
                 resource: compute_info_buffer.as_entire_binding(),
             },
         ],

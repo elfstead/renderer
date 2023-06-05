@@ -16,6 +16,9 @@ struct Vertex {
 struct MeshInfo {
     vertex_offset: u32,
     index_offset: u32,
+}
+
+struct Colors {
     ambient_color: vec3f,
     diffuse_color: vec3f,
 }
@@ -31,6 +34,8 @@ var<storage> indices: array<u32>;
 @group(1) @binding(2)
 var<storage> mesh_info: array<MeshInfo>;
 @group(1) @binding(3)
+var<storage> colors: array<Colors>;
+@group(1) @binding(4)
 var<uniform> compute_info: ComputeInfo;
 
 struct Camera {
@@ -75,19 +80,13 @@ fn closest_intersection(ro: vec3<f32>, rd: vec3<f32>) -> vec4f {
             if (u >= 0.0 && v >= 0.0 && u + v <= 1.0 && t > 0.00001) {
                 if (distance > length(t*rd)) {
                     distance = length(t*rd);
-                    color = mesh_info[i].diffuse_color;
-                    if (i == 4) {
-                        color = vec3f(0.0, 1.0, 0.0);
-                    }
-                    else if (i == 1 || i == 6 || i == 7) {
-                        color = vec3f(1.0, 1.0, 1.0);
-                    }
+                    color = colors[i].diffuse_color;
                 }
             }
         }
     }
-    //if (mesh_info[0].diffuse_color.r == 1.0) {
-        //color = mesh_info[8].diffuse_color;
+    //if (colors[0].diffuse_color.r == 1.0) {
+        //color = colors[8].diffuse_color;
     //}
     return vec4f(color, 1.0);
 }
