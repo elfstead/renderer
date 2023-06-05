@@ -254,6 +254,7 @@ pub fn load<P: AsRef<Path>>(
         usage: wgpu::BufferUsages::STORAGE,
     });
 
+    mesh_info[5].diffuse_color = [1.0, 0.0, 0.0];
     let mesh_info_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("Mesh Info Buffer"),
         contents: bytemuck::cast_slice(&mesh_info),
