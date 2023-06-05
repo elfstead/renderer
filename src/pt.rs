@@ -1,5 +1,22 @@
 use crate::model;
+use cgmath::*;
 use wgpu::util::DeviceExt;
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct Camera {
+    position: [f32; 3],
+    _padding: u32,
+    yaw: f32,
+    pitch: f32,
+    rot: [[f32; 3]; 3],
+    _padding2: [u32; 3],
+    aspect: f32,
+    focal_length: f32,
+    znear: f32,
+    zfar: f32,
+    _padding3: [u32; 2],
+}
 
 pub struct Pt {
     pt_buffer: wgpu::Buffer,
@@ -10,6 +27,7 @@ pub struct Pt {
     samples_per_pixel: u32,
     size: winit::dpi::PhysicalSize<u32>,
     model_bind_group: wgpu::BindGroup,
+    camera_bind_group: wgpu::BindGroup,
 }
 
 impl Pt {
@@ -17,6 +35,50 @@ impl Pt {
         let model_bind_group_layout = model::bind_group_layout(&device);
         let model_bind_group =
             model::load(&device, &model_bind_group_layout, "res/cornell_box.obj").unwrap();
+
+        let camera = Camera {
+            position: [250.0, 250.0, -500.0],
+            _padding: 0,
+            yaw: 0.0,
+            pitch: 0.0,
+            rot: Matrix3::identity().into(),
+            _padding2: [0, 0, 0],
+            aspect: size.width as f32 / size.height as f32,
+            focal_length: size.height as f32 / 2.0,
+            znear: 0.1,
+            zfar: 100.0,
+            _padding3: [0, 0],
+        };
+
+        let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Camera Buffer"),
+            contents: bytemuck::cast_slice(&[camera]),
+            usage: wgpu::BufferUsages::UNIFORM,
+        });
+
+        let camera_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("camera_bind_group_layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
+
+        let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("camera_bind_group"),
+            layout: &camera_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: camera_buffer.as_entire_binding(),
+            }],
+        });
 
         let samples_per_pixel = 4;
 
@@ -37,6 +99,7 @@ impl Pt {
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("pt_bind_group_layout"),
                 entries: &[
+                    // Pt
                     wgpu::BindGroupLayoutEntry {
                         binding: 0,
                         visibility: wgpu::ShaderStages::COMPUTE | wgpu::ShaderStages::FRAGMENT,
@@ -47,6 +110,7 @@ impl Pt {
                         },
                         count: None,
                     },
+                    // PtInfo
                     wgpu::BindGroupLayoutEntry {
                         binding: 1,
                         visibility: wgpu::ShaderStages::COMPUTE | wgpu::ShaderStages::FRAGMENT,
@@ -71,7 +135,11 @@ impl Pt {
         let compute_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Compute Pipeline Layout"),
-                bind_group_layouts: &[&pt_bind_group_layout, &model_bind_group_layout],
+                bind_group_layouts: &[
+                    &pt_bind_group_layout,
+                    &model_bind_group_layout,
+                    &camera_bind_group_layout,
+                ],
                 push_constant_ranges: &[],
             });
 
@@ -91,6 +159,7 @@ impl Pt {
             samples_per_pixel,
             size,
             model_bind_group,
+            camera_bind_group,
         }
     }
 
@@ -101,8 +170,9 @@ impl Pt {
         compute_pass.set_pipeline(&self.compute_pipeline);
         compute_pass.set_bind_group(0, &self.pt_bind_group, &[]);
         compute_pass.set_bind_group(1, &self.model_bind_group, &[]);
+        compute_pass.set_bind_group(2, &self.camera_bind_group, &[]);
 
-        compute_pass.dispatch_workgroups(self.size.width, self.size.height, self.samples_per_pixel);
+        compute_pass.dispatch_workgroups(self.size.width, self.size.height, 1);
     }
 
     pub fn bind_group_layout(&self) -> &wgpu::BindGroupLayout {
@@ -132,6 +202,7 @@ struct PtInfo {
     width: u32,
     height: u32,
     samples_per_pixel: u32,
+    _padding: u32,
 }
 
 fn create_pt_bufs(
@@ -141,7 +212,10 @@ fn create_pt_bufs(
 ) -> (wgpu::Buffer, wgpu::Buffer) {
     let pt_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("pt_buffer"),
-        size: (4 * samples_per_pixel * size.width * size.height).into(),
+        size: (wgpu::TextureFormat::Rgba32Float.block_size(None).unwrap()
+            * size.width
+            * size.height)
+            .into(),
         usage: wgpu::BufferUsages::STORAGE,
         mapped_at_creation: false,
     });
@@ -149,6 +223,7 @@ fn create_pt_bufs(
         width: size.width,
         height: size.height,
         samples_per_pixel,
+        _padding: 0,
     };
     let pt_info_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("Path Trace Info Buffer"),
@@ -168,10 +243,12 @@ fn create_pt_bind_group(
         label: Some("pt_bind_group"),
         layout: pt_bg_layout,
         entries: &[
+            // Pt
             wgpu::BindGroupEntry {
                 binding: 0,
                 resource: pt_buffer.as_entire_binding(),
             },
+            // PtInfo
             wgpu::BindGroupEntry {
                 binding: 1,
                 resource: pt_info_buffer.as_entire_binding(),

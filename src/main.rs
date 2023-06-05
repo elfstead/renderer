@@ -124,7 +124,7 @@ impl State {
     }
 
     fn update(&mut self, dt: Duration) {
-        //todo
+        //todo: add movement
     }
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
