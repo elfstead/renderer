@@ -52,7 +52,49 @@ struct Camera {
 @group(2) @binding(0)
 var<uniform> camera: Camera;
 
-// https://iquilezles.org/articles/intersectors/
+var<private> seed: f32;
+
+// https://gist.github.com/munrocket/236ed5ba7e409b8bdf1ff6eca5dcdc39
+fn rand() -> f32 {
+    seed = sin(seed) * 43758.5453123;
+    return fract(seed);
+}
+
+fn apply_lighting(pos: vec3<f32>, nor: vec3<f32>) -> vec3<f32> {
+    var color = vec3f(0.0);
+    for (var i = 0; i < i32(arrayLength(&mesh_info)) - 1; i++) {
+        let light_color = colors[i].ambient_color;
+        if (light_color.r > 0.0 || light_color.g > 0.0 || light_color.b > 0.0) {
+            let vertex_offset = mesh_info[i].vertex_offset;
+            let index_offset = mesh_info[i].index_offset;
+            let index_end = mesh_info[i+1].index_offset;
+            for (var j: i32 = i32(index_offset); j < i32(index_end); j += 3) {
+                let v0: vec3f = vertices[vertex_offset + indices[j]].pos;
+                let v1: vec3f = vertices[vertex_offset + indices[j+1]].pos;
+                let v2: vec3f = vertices[vertex_offset + indices[j+2]].pos;
+
+                let a = length(v1-v0);
+                let b = length(v2-v1);
+                let c = length(v0-v2);
+
+                let s = (a + b + c/2.0);
+                let area = sqrt(s*(s-a)*(s-b)*(s-c)); 
+                let importance = area*length(light_color);
+
+                // barycentric coordinates for homogenous probability over the surface
+                // https://people.cs.kuleuven.be/~philip.dutre/GI/TotalCompendium.pdf
+                let r1 = rand();
+                let r2 = rand();
+                let alpha = 1.0 - sqrt(r1);
+                let beta = (1.0 - r2)*sqrt(r1);
+                let gamma = r2*sqrt(r1);
+                let point = alpha*v0 + beta*v1 + gamma*v2;
+            }
+        }
+    }
+    return color;
+}
+
 fn closest_intersection(ro: vec3<f32>, rd: vec3<f32>) -> vec4f {
     var color: vec3f = vec3f(0f, 0f, 0f);
     var distance: f32 = 1e20f;
@@ -61,6 +103,7 @@ fn closest_intersection(ro: vec3<f32>, rd: vec3<f32>) -> vec4f {
         let index_offset = mesh_info[i].index_offset;
         let index_end = mesh_info[i+1].index_offset;
         for (var j: i32 = i32(index_offset); j < i32(index_end); j += 3) {
+            // https://iquilezles.org/articles/intersectors/
             let v0: vec3f = vertices[vertex_offset + indices[j]].pos;
             let v1: vec3f = vertices[vertex_offset + indices[j+1]].pos;
             let v2: vec3f = vertices[vertex_offset + indices[j+2]].pos;
@@ -88,11 +131,13 @@ fn closest_intersection(ro: vec3<f32>, rd: vec3<f32>) -> vec4f {
     //if (colors[0].diffuse_color.r == 1.0) {
         //color = colors[8].diffuse_color;
     //}
+    //color = vec3f(rand(), rand(), rand());
     return vec4f(color, 1.0);
 }
 
 @compute @workgroup_size(1)
 fn main(@builtin(global_invocation_id) param: vec3<u32>, @builtin(num_workgroups) num: vec3<u32>) {
+    seed = f32(pt_info.samples_per_pixel) * sin(dot(vec2<f32>(param.xy), vec2<f32>(12.9898, 4.1414))) * 43758.5453;
     let ident = mat3x3f(vec3f(1.0, 0.0, 0.0), vec3f(0.0, 1.0, 0.0), vec3f(0.0, 0.0, 1.0));
     var rd = ident * vec3f(
         f32(num.x - param.x) - f32(num.x)/2f,
