@@ -80,7 +80,7 @@ impl Pt {
             }],
         });
 
-        let samples_per_pixel = 4;
+        let samples_per_pixel = 0;
 
         /*
          * We need to create a special texture buffer to draw our result to
@@ -194,6 +194,17 @@ impl Pt {
             &self.pt_bind_group_layout,
         );
     }
+
+    pub fn next_frame(&mut self, queue: &wgpu::Queue) {
+        self.samples_per_pixel += 1;
+        let pt_info = PtInfo {
+            width: self.size.width,
+            height: self.size.height,
+            samples_per_pixel: self.samples_per_pixel,
+            _padding: 0,
+        };
+        queue.write_buffer(&self.pt_info_buffer, 0, bytemuck::cast_slice(&[pt_info]));
+    }
 }
 
 #[repr(C)]
@@ -228,7 +239,7 @@ fn create_pt_bufs(
     let pt_info_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("Path Trace Info Buffer"),
         contents: bytemuck::cast_slice(&[pt_info]),
-        usage: wgpu::BufferUsages::UNIFORM,
+        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
     });
     (pt_buffer, pt_info_buffer)
 }

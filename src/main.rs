@@ -133,6 +133,8 @@ impl State {
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
 
+        self.pt.next_frame(&self.queue);
+
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {

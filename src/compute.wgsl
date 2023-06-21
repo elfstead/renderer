@@ -25,6 +25,7 @@ struct Colors {
 
 struct ComputeInfo {
     num_meshes: u32,
+    num_lights: u32,
 }
 
 @group(1) @binding(0)
@@ -60,8 +61,18 @@ fn rand() -> f32 {
     return fract(seed);
 }
 
+struct Collision {
+    distance: f32,
+    position: vec3f,
+    normal: vec3f,
+    color: vec3f,
+}
+
+const PI: f32 = 3.14159265358979323846264338327950288;
+
 fn apply_lighting(pos: vec3<f32>, nor: vec3<f32>) -> vec3<f32> {
     var color = vec3f(0.0);
+    var lights = 0;
     for (var i = 0; i < i32(arrayLength(&mesh_info)) - 1; i++) {
         let light_color = colors[i].ambient_color;
         if (light_color.r > 0.0 || light_color.g > 0.0 || light_color.b > 0.0) {
@@ -73,6 +84,7 @@ fn apply_lighting(pos: vec3<f32>, nor: vec3<f32>) -> vec3<f32> {
                 let v1: vec3f = vertices[vertex_offset + indices[j+1]].pos;
                 let v2: vec3f = vertices[vertex_offset + indices[j+2]].pos;
 
+                /*
                 let a = length(v1-v0);
                 let b = length(v2-v1);
                 let c = length(v0-v2);
@@ -80,6 +92,7 @@ fn apply_lighting(pos: vec3<f32>, nor: vec3<f32>) -> vec3<f32> {
                 let s = (a + b + c/2.0);
                 let area = sqrt(s*(s-a)*(s-b)*(s-c)); 
                 let importance = area*length(light_color);
+                */
 
                 // barycentric coordinates for homogenous probability over the surface
                 // https://people.cs.kuleuven.be/~philip.dutre/GI/TotalCompendium.pdf
@@ -89,15 +102,34 @@ fn apply_lighting(pos: vec3<f32>, nor: vec3<f32>) -> vec3<f32> {
                 let beta = (1.0 - r2)*sqrt(r1);
                 let gamma = r2*sqrt(r1);
                 let point = alpha*v0 + beta*v1 + gamma*v2;
+
+                let dir = point - pos;
+
+                let inters = closest_intersection(pos, dir);
+
+                if (inters.distance >= length(dir) - 100.0) { //magic param
+                    var add = light_color * 10000.0 * max(dot(nor,normalize(dir)), 0.0); //magic param
+                    /*if (add.r < 0.1 && add.g < 0.1) {
+                        return vec3f(1.0, 0.0, 0.0);
+                    }*/
+                    add /= (4.0*pow(length(dir), 2.0));
+                    color += add;
+                    //color += vec3f(0.01);
+                    lights += 1;
+                }
             }
         }
     }
-    return color;
+    //warning: possible div-by-0
+    return color/f32(lights);
 }
 
-fn closest_intersection(ro: vec3<f32>, rd: vec3<f32>) -> vec4f {
+fn closest_intersection(ro: vec3<f32>, rd: vec3<f32>) -> Collision {
     var color: vec3f = vec3f(0f, 0f, 0f);
-    var distance: f32 = 1e20f;
+    let max_dist = 1e20f;
+    var distance: f32 = max_dist;
+    var position: vec3f = ro;
+    var normal: vec3f = rd;
     for (var i = 0; i < i32(arrayLength(&mesh_info)) - 1; i++) {
         let vertex_offset = mesh_info[i].vertex_offset;
         let index_offset = mesh_info[i].index_offset;
@@ -120,10 +152,12 @@ fn closest_intersection(ro: vec3<f32>, rd: vec3<f32>) -> vec4f {
             let v = d*dot(q, e1);
             let t = d*dot(-n, b);
 
-            if (u >= 0.0 && v >= 0.0 && u + v <= 1.0 && t > 0.00001) {
+            if (u >= 0.0 && v >= 0.0 && u + v <= 1.0 && t > 0.001) { //magic param
                 if (distance > length(t*rd)) {
                     distance = length(t*rd);
                     color = colors[i].diffuse_color;
+                    position = ro + t*rd;
+                    normal = normalize(cross(e1, e2));
                 }
             }
         }
@@ -132,7 +166,57 @@ fn closest_intersection(ro: vec3<f32>, rd: vec3<f32>) -> vec4f {
         //color = colors[8].diffuse_color;
     //}
     //color = vec3f(rand(), rand(), rand());
+    if (distance >= max_dist) {
+        distance = -1.0;
+    }
+    var out: Collision;
+    out.distance = distance;
+    out.position = position;
+    out.normal = normal;
+    out.color = color;
+
+    return out;
+}
+
+// https://iquilezles.org/articles/simplepathtracing/
+fn trace_path(ro0: vec3<f32>, rd0: vec3<f32>) -> vec4f {
+    var color = vec3f(0.0);
+    var surface_color = vec3f(1.0);
+    var ro = ro0;
+    var rd = rd0;
+    for (var i = 0; i < 4; i++) {
+        let col = closest_intersection(ro, rd);
+
+        if (col.distance < 0.0) {
+            if (i == 0) {
+                color = vec3f(0.0, 0.1, 0.5); //bg/sky color
+            }
+            break;
+        }
+        
+        let light = apply_lighting(col.position, col.normal);
+        surface_color *= col.color;
+        color += surface_color * light;
+        ro = col.position;
+        rd = random_bounce(col.normal);
+    }
+
     return vec4f(color, 1.0);
+}
+
+
+fn random_bounce(norm: vec3f) -> vec3f {
+    return lambert(norm);
+}
+
+// https://web.archive.org/web/20170610002747/http://www.amietia.com/lambertnotangent.html
+fn lambert(norm: vec3f) -> vec3f {
+    let r1 = rand();
+    let r2 = 2.0*rand() - 1.0;
+
+    let theta = 2.0 * PI * r1;
+    let sphere_point = vec3f(sqrt(1.0 - r2 * r2) * vec2f(cos(theta), sin(theta)), r2);
+    return norm + sphere_point;
 }
 
 @compute @workgroup_size(1)
@@ -149,7 +233,9 @@ fn main(@builtin(global_invocation_id) param: vec3<u32>, @builtin(num_workgroups
     //rd = normalize(rd);
 
     let ro = camera.position;
-    let color = closest_intersection(ro, rd);
+    var color = trace_path(ro, rd);
+    color = clamp(color, vec4f(0.0), vec4f(1.0));
     
-    pt[param.x + param.y*pt_info.width] = color;
+    //pt[param.x + param.y*pt_info.width] = color;
+    pt[param.x + param.y*pt_info.width] += color;
 }

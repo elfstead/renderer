@@ -31,5 +31,6 @@ fn fs_main(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
     let coords = vec3<u32>(u32(pos.x), u32(pos.y), u32(0));
     //copy color from path trace storage buffer
     let color = pt[coords.x + coords.y*pt_info.width];
-    return color;
+    //return color;
+    return color/color.a;
 }

@@ -30,6 +30,7 @@ struct Colors {
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct ComputeInfo {
     num_meshes: u32,
+    num_lights: u32,
 }
 
 pub fn bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
@@ -292,6 +293,7 @@ pub fn load<P: AsRef<Path>>(
     let compute_info = ComputeInfo {
         // -1 because the last mesh is a dummy to show where we end
         num_meshes: (mesh_info.len() - 1).try_into().expect("too many meshes"),
+        num_lights: colors.iter().filter(|x| x.ambient_color[0] > 0.0 || x.ambient_color[1] > 0.0 || x.ambient_color[2] > 0.0).count() as u32,
     };
 
     let compute_info_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
