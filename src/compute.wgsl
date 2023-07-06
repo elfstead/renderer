@@ -109,6 +109,7 @@ fn apply_lighting(pos: vec3<f32>, nor: vec3<f32>) -> vec3<f32> {
 
                 if (inters.distance >= length(dir) - 100.0) { //magic param
                     var add = light_color * 10000.0 * max(dot(nor,normalize(dir)), 0.0); //magic param
+                    //var add = light_color * 10000.0; //magic param
                     /*if (add.r < 0.1 && add.g < 0.1) {
                         return vec3f(1.0, 0.0, 0.0);
                     }*/
@@ -234,7 +235,8 @@ fn main(@builtin(global_invocation_id) param: vec3<u32>, @builtin(num_workgroups
 
     let ro = camera.position;
     var color = trace_path(ro, rd);
-    color = clamp(color, vec4f(0.0), vec4f(1.0));
+    //color = clamp(color, vec4f(0.0), vec4f(1.0));
+    color = max(vec4f(0.0), color);
     
     //pt[param.x + param.y*pt_info.width] = color;
     pt[param.x + param.y*pt_info.width] += color;
