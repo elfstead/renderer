@@ -1,4 +1,4 @@
-use cgmath::*;
+use glam::{vec3, Mat3, Vec3};
 use std::path::Path;
 
 use wgpu::util::DeviceExt;
@@ -193,39 +193,33 @@ pub fn load<P: AsRef<Path>>(
     const SCREEN_H: usize = 25;
     let mut screendraw = [[vec3(0.0, 0.0, 0.0); SCREEN_H]; SCREEN_W];
 
-    let cam_r: Matrix3<f32> = cgmath::Matrix3::identity();
-    let ro = cgmath::vec3(250.0, 250.0, -500.0);
+    let cam_r = Mat3::IDENTITY;
+    let ro = vec3(250.0, 250.0, -500.0);
 
     for screen_y in 0..SCREEN_H {
         for screen_x in 0..SCREEN_W {
             let mut distance: f32 = 1e20;
             let mut color = vec3(0.0, 0.0, 0.0);
-            let px_vec: Vector3<f32> = cgmath::vec3(
+            let px_vec = vec3(
                 screen_x as f32 - SCREEN_W as f32 / 2.0,
                 screen_y as f32 - SCREEN_H as f32 / 2.0,
                 SCREEN_H as f32 / 2.0,
             );
 
-            let rd =
-                <cgmath::Matrix3<f32> as cgmath::Transform<cgmath::Point3<f32>>>::transform_vector(
-                    &cam_r, px_vec,
-                );
+            let rd = cam_r * px_vec;
 
             for i in 0..(mesh_info.len() - 1) {
                 let v_offs = mesh_info[i].vertex_offset;
                 let i_offs = mesh_info[i].index_offset;
                 let i_end = mesh_info[i + 1].index_offset;
                 for j in i_offs / 3..i_end / 3 {
-                    let v0: cgmath::Vector3<f32> = vertices
-                        [v_offs as usize + indices[j as usize * 3] as usize]
+                    let v0: Vec3 = vertices[v_offs as usize + indices[j as usize * 3] as usize]
                         .position
                         .into();
-                    let v1: cgmath::Vector3<f32> = vertices
-                        [v_offs as usize + indices[j as usize * 3 + 1] as usize]
+                    let v1: Vec3 = vertices[v_offs as usize + indices[j as usize * 3 + 1] as usize]
                         .position
                         .into();
-                    let v2: cgmath::Vector3<f32> = vertices
-                        [v_offs as usize + indices[j as usize * 3 + 2] as usize]
+                    let v2: Vec3 = vertices[v_offs as usize + indices[j as usize * 3 + 2] as usize]
                         .position
                         .into();
 
@@ -244,17 +238,17 @@ pub fn load<P: AsRef<Path>>(
                     let e2 = v2 - v0;
                     let b = ro - v0;
 
-                    let n = cgmath::Vector3::cross(e1, e2);
-                    let q = cgmath::Vector3::cross(b, rd);
+                    let n = Vec3::cross(e1, e2);
+                    let q = Vec3::cross(b, rd);
 
-                    let d = 1.0 / cgmath::dot(rd, n);
-                    let u = d * dot(-q, e2);
-                    let v = d * dot(q, e1);
-                    let t = d * dot(-n, b);
+                    let d = 1.0 / Vec3::dot(rd, n);
+                    let u = d * Vec3::dot(-q, e2);
+                    let v = d * Vec3::dot(q, e1);
+                    let t = d * Vec3::dot(-n, b);
 
                     if u >= 0.0 && v >= 0.0 && u + v <= 1.0 && t > 0.00001 {
-                        if distance > cgmath::Vector3::magnitude(t * rd) {
-                            distance = cgmath::Vector3::magnitude(t * rd);
+                        if distance > t * rd.length() {
+                            distance = t * rd.length();
                             color = vec3(1.0, 1.0, 1.0);
                         }
                     }
@@ -293,7 +287,12 @@ pub fn load<P: AsRef<Path>>(
     let compute_info = ComputeInfo {
         // -1 because the last mesh is a dummy to show where we end
         num_meshes: (mesh_info.len() - 1).try_into().expect("too many meshes"),
-        num_lights: colors.iter().filter(|x| x.ambient_color[0] > 0.0 || x.ambient_color[1] > 0.0 || x.ambient_color[2] > 0.0).count() as u32,
+        num_lights: colors
+            .iter()
+            .filter(|x| {
+                x.ambient_color[0] > 0.0 || x.ambient_color[1] > 0.0 || x.ambient_color[2] > 0.0
+            })
+            .count() as u32,
     };
 
     let compute_info_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {

@@ -7,8 +7,8 @@ edition = "2021"
 
 [dependencies]
 bytemuck = { version = "1.14", features = [ "derive" ] }
-cgmath = "0.18" #most skeptical about this crate out of all
 env_logger = "0.10"
+glam = "0.24"
 log = "0.4"
 pollster = "0.3"
 tobj = { version = "4.0", features = ["async"] }

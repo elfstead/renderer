@@ -1,5 +1,5 @@
 use crate::model;
-use cgmath::*;
+use glam::Mat3;
 use wgpu::util::DeviceExt;
 
 #[repr(C)]
@@ -41,7 +41,7 @@ impl Pt {
             _padding: 0,
             yaw: 0.0,
             pitch: 0.0,
-            rot: Matrix3::identity().into(),
+            rot: Mat3::IDENTITY.to_cols_array_2d(),
             _padding2: [0, 0, 0],
             aspect: size.width as f32 / size.height as f32,
             focal_length: size.height as f32 / 2.0,
