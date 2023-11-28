@@ -3,3 +3,5 @@
 - print out everything i send to gpu
 
 - try some diff approaches for the light calc func. like why is it ever nega? just try some basic shit and make it more cooler after
+
+- why is frametime sometimes 0 and sometimes double? race condition?
