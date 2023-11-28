@@ -57,7 +57,7 @@ var<private> seed: f32;
 
 // https://gist.github.com/munrocket/236ed5ba7e409b8bdf1ff6eca5dcdc39
 fn rand() -> f32 {
-    seed = sin(seed) * 43758.5453123;
+    seed = sin(seed) * 43758.95453123;
     return fract(seed);
 }
 
@@ -73,13 +73,13 @@ const PI: f32 = 3.14159265358979323846264338327950288;
 fn apply_lighting(pos: vec3<f32>, nor: vec3<f32>) -> vec3<f32> {
     var color = vec3f(0.0);
     var lights = 0;
-    for (var i = 0; i < i32(arrayLength(&mesh_info)) - 1; i++) {
+    for (var i = 0; i < i32(arrayLength(&mesh_info)) - 1; i++) { // for each mesh
         let light_color = colors[i].ambient_color;
-        if (light_color.r > 0.0 || light_color.g > 0.0 || light_color.b > 0.0) {
+        if (light_color.r > 0.0 || light_color.g > 0.0 || light_color.b > 0.0) { // if it is a light
             let vertex_offset = mesh_info[i].vertex_offset;
             let index_offset = mesh_info[i].index_offset;
             let index_end = mesh_info[i+1].index_offset;
-            for (var j: i32 = i32(index_offset); j < i32(index_end); j += 3) {
+            for (var j: i32 = i32(index_offset); j < i32(index_end); j += 3) { // for every triangle in that light
                 let v0: vec3f = vertices[vertex_offset + indices[j]].pos;
                 let v1: vec3f = vertices[vertex_offset + indices[j+1]].pos;
                 let v2: vec3f = vertices[vertex_offset + indices[j+2]].pos;
@@ -93,6 +93,8 @@ fn apply_lighting(pos: vec3<f32>, nor: vec3<f32>) -> vec3<f32> {
                 let area = sqrt(s*(s-a)*(s-b)*(s-c)); 
                 let importance = area*length(light_color);
                 */
+
+                // pick a random point in the triangle and see if it illuminates the point we are interested in
 
                 // barycentric coordinates for homogenous probability over the surface
                 // https://people.cs.kuleuven.be/~philip.dutre/GI/TotalCompendium.pdf
@@ -223,7 +225,7 @@ fn lambert(norm: vec3f) -> vec3f {
 
 @compute @workgroup_size(1)
 fn main(@builtin(global_invocation_id) param: vec3<u32>, @builtin(num_workgroups) num: vec3<u32>) {
-    seed = f32(pt_info.samples_per_pixel) * sin(dot(vec2<f32>(param.xy), vec2<f32>(12.9898, 4.1414))) * 43758.5453;
+    seed = f32(pt_info.samples_per_pixel) * sin(dot(vec2<f32>(param.xy), vec2<f32>(12.9898, 4.1414))) * 43758.95453;
     let ident = mat3x3f(vec3f(1.0, 0.0, 0.0), vec3f(0.0, 1.0, 0.0), vec3f(0.0, 0.0, 1.0));
     var rd = ident * vec3f(
         f32(num.x - param.x) - f32(num.x)/2f,
