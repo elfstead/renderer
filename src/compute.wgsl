@@ -57,7 +57,7 @@ var<private> seed: f32;
 
 // https://gist.github.com/munrocket/236ed5ba7e409b8bdf1ff6eca5dcdc39
 fn rand() -> f32 {
-    seed = sin(seed) * 43758.95453123;
+    seed = sin(seed) * 43758.5453123;
     return fract(seed);
 }
 
@@ -225,7 +225,7 @@ fn lambert(norm: vec3f) -> vec3f {
 
 @compute @workgroup_size(1)
 fn main(@builtin(global_invocation_id) param: vec3<u32>, @builtin(num_workgroups) num: vec3<u32>) {
-    seed = f32(pt_info.samples_per_pixel) * sin(dot(vec2<f32>(param.xy), vec2<f32>(12.9898, 4.1414))) * 43758.95453;
+    seed = f32(pt_info.samples_per_pixel) * sin(dot(vec2<f32>(param.xy), vec2<f32>(12.9898, 4.1414))) * 43758.5453;
     let ident = mat3x3f(vec3f(1.0, 0.0, 0.0), vec3f(0.0, 1.0, 0.0), vec3f(0.0, 0.0, 1.0));
     var rd = ident * vec3f(
         f32(num.x - param.x) - f32(num.x)/2f,
