@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 use winit::{
     event::*,
     event_loop::EventLoop,
+    keyboard::*,
     window::{Window, WindowBuilder},
 };
 
@@ -123,7 +124,7 @@ impl State {
         }
     }
 
-    fn update(&mut self, dt: Duration) {
+    fn update(&mut self, _dt: Duration) {
         //todo: add movement
     }
 
@@ -152,10 +153,12 @@ impl State {
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Load,
-                        store: true,
+                        store: wgpu::StoreOp::Store,
                     },
                 })],
                 depth_stencil_attachment: None,
+                occlusion_query_set: None,
+                timestamp_writes: None,
             });
 
             render_pass.set_pipeline(&self.render_pipeline);
@@ -172,51 +175,49 @@ impl State {
 
 async fn run() {
     env_logger::init();
-    let event_loop = EventLoop::new();
+    let event_loop = EventLoop::new().unwrap();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
     let mut state = State::new(window).await;
     let mut last_render_time = Instant::now();
 
-    event_loop.run(move |event, _, control_flow| match event {
+    _ = event_loop.run(move |event, control_flow| match event {
         Event::WindowEvent { ref event, .. } => match event {
             WindowEvent::CloseRequested
             | WindowEvent::KeyboardInput {
-                input:
-                    KeyboardInput {
+                event:
+                    KeyEvent {
                         state: ElementState::Pressed,
-                        virtual_keycode: Some(VirtualKeyCode::Escape),
+                        logical_key: Key::Named(NamedKey::Escape),
                         ..
                     },
                 ..
-            } => control_flow.set_exit(),
+            } => control_flow.exit(),
             WindowEvent::Resized(physical_size) => {
                 state.resize(*physical_size);
             }
-            WindowEvent::ScaleFactorChanged { new_inner_size, .. } => {
-                state.resize(**new_inner_size);
+            WindowEvent::RedrawRequested => {
+                let now = Instant::now();
+                let dt = now - last_render_time;
+                last_render_time = now;
+                println!("frametime: {} ms", dt.as_millis());
+                state.update(dt);
+                match state.render() {
+                    Ok(_) => {}
+                    // Reconfigure the surface if it's lost or outdated
+                    Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+                        state.resize(state.size)
+                    }
+                    // The system is out of memory, we should probably quit
+                    Err(wgpu::SurfaceError::OutOfMemory) => control_flow.exit(),
+                    // We're ignoring timeouts
+                    Err(wgpu::SurfaceError::Timeout) => log::warn!("Surface timeout"),
+                }
             }
             _ => (),
         },
-        Event::MainEventsCleared => {
+        // tbh should remove this and decouple background math from refresh rate
+        Event::AboutToWait => {
             state.window.request_redraw();
-        }
-        Event::RedrawRequested(_) => {
-            let now = Instant::now();
-            let dt = now - last_render_time;
-            last_render_time = now;
-            println!("frametime: {} ms", dt.as_millis());
-            state.update(dt);
-            match state.render() {
-                Ok(_) => {}
-                // Reconfigure the surface if it's lost or outdated
-                Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
-                    state.resize(state.size)
-                }
-                // The system is out of memory, we should probably quit
-                Err(wgpu::SurfaceError::OutOfMemory) => control_flow.set_exit(),
-                // We're ignoring timeouts
-                Err(wgpu::SurfaceError::Timeout) => log::warn!("Surface timeout"),
-            }
         }
         _ => (),
     });

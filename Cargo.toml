@@ -6,11 +6,11 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-bytemuck = { version = "1.13", features = [ "derive" ] }
-cgmath = "0.18"
+bytemuck = { version = "1.14", features = [ "derive" ] }
+cgmath = "0.18" #most skeptical about this crate out of all
 env_logger = "0.10"
 log = "0.4"
 pollster = "0.3"
 tobj = { version = "4.0", features = ["async"] }
-wgpu = "0.16"
-winit = "0.28"
+wgpu = "0.18"
+winit = { version = "0.29", features = ["rwh_05"] }

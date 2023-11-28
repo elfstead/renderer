@@ -107,14 +107,15 @@ fn apply_lighting(pos: vec3<f32>, nor: vec3<f32>) -> vec3<f32> {
 
                 let inters = closest_intersection(pos, dir);
 
-                if (inters.distance >= length(dir) - 100.0) { //magic param
-                    var add = light_color * 10000.0 * max(dot(nor,normalize(dir)), 0.0); //magic param
+// I THINK THIS BLOCK IS WHERE IT GETS FUCKED!
+                if (inters.distance >= length(dir) - 100.0) { //magic param, cant imagine it needs to be large ever except for at very very sharp angles, which can still be ignored, so just like 0.001 max for this right???
+                    var add = light_color * 10000.0 * max(dot(nor,normalize(dir)), 0.0); //magic param, why am i multiplying by SO MUCH. Something must be wrong
                     //var add = light_color * 10000.0; //magic param
                     /*if (add.r < 0.1 && add.g < 0.1) {
                         return vec3f(1.0, 0.0, 0.0);
                     }*/
                     add /= (4.0*pow(length(dir), 2.0));
-                    color += add;
+                    color += add; //I think color sometimes ends up negative and THAT SHOULDNT BE POSSIBLE
                     //color += vec3f(0.01);
                     lights += 1;
                 }
