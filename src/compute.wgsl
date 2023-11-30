@@ -53,12 +53,23 @@ struct Camera {
 @group(2) @binding(0)
 var<uniform> camera: Camera;
 
-var<private> seed: f32;
+// The cornell scene is on the order of 500 units
+const EPSILON: f32 = 0.001;
+
+var<private> seed: u32;
 
 // https://gist.github.com/munrocket/236ed5ba7e409b8bdf1ff6eca5dcdc39
+// https://www.pcg-random.org/
+fn pcg(n: u32) -> u32 {
+    var h = n * 747796405u + 2891336453u;
+    h = ((h >> ((h >> 28u) + 4u)) ^ h) * 277803737u;
+    return (h >> 22u) ^ h;
+}
+
 fn rand() -> f32 {
-    seed = sin(seed) * 43758.5453123;
-    return fract(seed);
+    seed = pcg(seed);
+
+    return f32(seed)/f32(0xffffffffu);
 }
 
 struct Collision {
@@ -109,23 +120,20 @@ fn apply_lighting(pos: vec3<f32>, nor: vec3<f32>) -> vec3<f32> {
 
                 let inters = closest_intersection(pos, dir);
 
-// I THINK THIS BLOCK IS WHERE IT GETS FUCKED!
-                if (inters.distance >= length(dir) - 100.0) { //magic param, cant imagine it needs to be large ever except for at very very sharp angles, which can still be ignored, so just like 0.001 max for this right???
+                if (inters.distance >= length(dir) - EPSILON) {
                     var add = light_color * 10000.0 * max(dot(nor,normalize(dir)), 0.0); //magic param, why am i multiplying by SO MUCH. Something must be wrong
-                    //var add = light_color * 10000.0; //magic param
-                    /*if (add.r < 0.1 && add.g < 0.1) {
-                        return vec3f(1.0, 0.0, 0.0);
-                    }*/
                     add /= (4.0*pow(length(dir), 2.0));
-                    color += add; //I think color sometimes ends up negative and THAT SHOULDNT BE POSSIBLE
-                    //color += vec3f(0.01);
+                    color += add;
                     lights += 1;
                 }
             }
         }
     }
     //warning: possible div-by-0
-    return color/f32(lights);
+    if (lights > 0) {
+        return color/f32(lights);
+    }
+    return vec3(0.0);
 }
 
 fn closest_intersection(ro: vec3<f32>, rd: vec3<f32>) -> Collision {
@@ -156,9 +164,11 @@ fn closest_intersection(ro: vec3<f32>, rd: vec3<f32>) -> Collision {
             let v = d*dot(q, e1);
             let t = d*dot(-n, b);
 
-            if (u >= 0.0 && v >= 0.0 && u + v <= 1.0 && t > 0.001) { //magic param
-                if (distance > length(t*rd)) {
-                    distance = length(t*rd);
+            let dist2 = length(rd)*t;
+
+            if (u >= 0.0 && v >= 0.0 && u + v <= 1.0 && dist2 > EPSILON) {
+                if (distance > dist2) {
+                    distance = dist2;
                     color = colors[i].diffuse_color;
                     position = ro + t*rd;
                     normal = normalize(cross(e1, e2));
@@ -166,10 +176,6 @@ fn closest_intersection(ro: vec3<f32>, rd: vec3<f32>) -> Collision {
             }
         }
     }
-    //if (colors[0].diffuse_color.r == 1.0) {
-        //color = colors[8].diffuse_color;
-    //}
-    //color = vec3f(rand(), rand(), rand());
     if (distance >= max_dist) {
         distance = -1.0;
     }
@@ -225,7 +231,7 @@ fn lambert(norm: vec3f) -> vec3f {
 
 @compute @workgroup_size(1)
 fn main(@builtin(global_invocation_id) param: vec3<u32>, @builtin(num_workgroups) num: vec3<u32>) {
-    seed = f32(pt_info.samples_per_pixel) * sin(dot(vec2<f32>(param.xy), vec2<f32>(12.9898, 4.1414))) * 43758.5453;
+    seed = pt_info.samples_per_pixel*param.x*param.y + param.x + param.y;
     let ident = mat3x3f(vec3f(1.0, 0.0, 0.0), vec3f(0.0, 1.0, 0.0), vec3f(0.0, 0.0, 1.0));
     var rd = ident * vec3f(
         f32(num.x - param.x) - f32(num.x)/2f,
@@ -238,9 +244,7 @@ fn main(@builtin(global_invocation_id) param: vec3<u32>, @builtin(num_workgroups
 
     let ro = camera.position;
     var color = trace_path(ro, rd);
-    //color = clamp(color, vec4f(0.0), vec4f(1.0));
-    color = max(vec4f(0.0), color);
+    color = clamp(color, vec4f(0.0), vec4f(1.0)); // i think clamping is a hack
     
-    //pt[param.x + param.y*pt_info.width] = color;
     pt[param.x + param.y*pt_info.width] += color;
 }
