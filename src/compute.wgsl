@@ -234,8 +234,8 @@ fn main(@builtin(global_invocation_id) param: vec3<u32>, @builtin(num_workgroups
     seed = pt_info.samples_per_pixel*param.x*param.y + param.x + param.y;
     let ident = mat3x3f(vec3f(1.0, 0.0, 0.0), vec3f(0.0, 1.0, 0.0), vec3f(0.0, 0.0, 1.0));
     var rd = ident * vec3f(
-        f32(num.x - param.x) - f32(num.x)/2f,
-        f32(num.y - param.y) - f32(num.y)/2f,
+        f32(num.x - param.x) - f32(num.x)/2f + rand(),
+        f32(num.y - param.y) - f32(num.y)/2f + rand(),
         f32(num.y)/2f
         );
 
