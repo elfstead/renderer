@@ -76,7 +76,7 @@ struct Collision {
     distance: f32,
     position: vec3f,
     normal: vec3f,
-    color: vec3f,
+    color_idx: u32,
 }
 
 const PI: f32 = 3.14159265358979323846264338327950288;
@@ -137,7 +137,7 @@ fn apply_lighting(pos: vec3<f32>, nor: vec3<f32>) -> vec3<f32> {
 }
 
 fn closest_intersection(ro: vec3<f32>, rd: vec3<f32>) -> Collision {
-    var color: vec3f = vec3f(0f, 0f, 0f);
+    var color_idx: i32 = 0;
     let max_dist = 1e20f;
     var distance: f32 = max_dist;
     var position: vec3f = ro;
@@ -146,7 +146,7 @@ fn closest_intersection(ro: vec3<f32>, rd: vec3<f32>) -> Collision {
         let vertex_offset = mesh_info[i].vertex_offset;
         let index_offset = mesh_info[i].index_offset;
         let index_end = mesh_info[i+1].index_offset;
-        for (var j: i32 = i32(index_offset); j < i32(index_end); j += 3) {
+        for (var j = i32(index_offset); j < i32(index_end); j += 3) {
             // https://iquilezles.org/articles/intersectors/
             let v0: vec3f = vertices[vertex_offset + indices[j]].pos;
             let v1: vec3f = vertices[vertex_offset + indices[j+1]].pos;
@@ -167,9 +167,9 @@ fn closest_intersection(ro: vec3<f32>, rd: vec3<f32>) -> Collision {
             let dist2 = length(rd)*t;
 
             if (u >= 0.0 && v >= 0.0 && u + v <= 1.0 && dist2 > EPSILON) {
-                if (distance > dist2) {
+                if (dist2 < distance) {
                     distance = dist2;
-                    color = colors[i].diffuse_color;
+                    color_idx = i;
                     position = ro + t*rd;
                     normal = normalize(cross(e1, e2));
                 }
@@ -183,7 +183,7 @@ fn closest_intersection(ro: vec3<f32>, rd: vec3<f32>) -> Collision {
     out.distance = distance;
     out.position = position;
     out.normal = normal;
-    out.color = color;
+    out.color_idx = u32(color_idx);
 
     return out;
 }
@@ -205,8 +205,9 @@ fn trace_path(ro0: vec3<f32>, rd0: vec3<f32>) -> vec4f {
         }
         
         let light = apply_lighting(col.position, col.normal);
-        surface_color *= col.color;
-        color += surface_color * light;
+        surface_color *= colors[col.color_idx].diffuse_color;
+        color += surface_color * light; //does this make color end as more than 1?
+        color += colors[col.color_idx].ambient_color;
         ro = col.position;
         rd = random_bounce(col.normal);
     }
