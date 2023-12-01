@@ -8,10 +8,11 @@ Path traced renderer in WebGPU and Rust
 
 - Multiple light bounces
 - Diffuse materials with Lambert scattering
+- Built-in antialising (no post-processing)
 - .obj scene files for geometry
 - .mtl materials with diffuse and ambient colors
 - PCG random white noise
-- Path tracing happens in WGSL compute shaders
+- All rendering logic in WGSL compute shaders
 
 ## Running
 
