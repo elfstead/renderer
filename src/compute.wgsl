@@ -5,7 +5,7 @@ struct PtInfo {
 }
 
 @group(0) @binding(0)
-var<storage, read_write> pt: array<vec4<f32>>;
+var<storage, read_write> pt: array<vec4f>;
 @group(0) @binding(1)
 var<uniform> pt_info: PtInfo;
 
@@ -43,7 +43,7 @@ struct Camera {
     position: vec3f,
     yaw: f32,
     pitch: f32,
-    rot: mat3x3<f32>,
+    rot: mat3x3f,
     aspect: f32,
     focal_length: f32,
     znear: f32,
@@ -81,7 +81,7 @@ struct Collision {
 
 const PI: f32 = 3.14159265358979323846264338327950288;
 
-fn apply_lighting(pos: vec3<f32>, nor: vec3<f32>) -> vec3<f32> {
+fn apply_lighting(pos: vec3f, nor: vec3f) -> vec3f {
     var color = vec3f(0.0);
     var lights = 0;
     for (var i = 0; i < i32(arrayLength(&mesh_info)) - 1; i++) { // for each mesh
@@ -129,14 +129,13 @@ fn apply_lighting(pos: vec3<f32>, nor: vec3<f32>) -> vec3<f32> {
             }
         }
     }
-    //warning: possible div-by-0
     if (lights > 0) {
         return color/f32(lights);
     }
-    return vec3(0.0);
+    return vec3f(0.0);
 }
 
-fn closest_intersection(ro: vec3<f32>, rd: vec3<f32>) -> Collision {
+fn closest_intersection(ro: vec3f, rd: vec3f) -> Collision {
     var color_idx: i32 = 0;
     let max_dist = 1e20f;
     var distance: f32 = max_dist;
@@ -166,6 +165,7 @@ fn closest_intersection(ro: vec3<f32>, rd: vec3<f32>) -> Collision {
 
             let dist2 = length(rd)*t;
 
+            // if the intersection is within the triangle and not super close
             if (u >= 0.0 && v >= 0.0 && u + v <= 1.0 && dist2 > EPSILON) {
                 if (dist2 < distance) {
                     distance = dist2;
@@ -189,7 +189,7 @@ fn closest_intersection(ro: vec3<f32>, rd: vec3<f32>) -> Collision {
 }
 
 // https://iquilezles.org/articles/simplepathtracing/
-fn trace_path(ro0: vec3<f32>, rd0: vec3<f32>) -> vec4f {
+fn trace_path(ro0: vec3f, rd0: vec3f) -> vec4f {
     var color = vec3f(0.0);
     var surface_color = vec3f(1.0);
     var ro = ro0;
@@ -231,7 +231,7 @@ fn lambert(norm: vec3f) -> vec3f {
 }
 
 @compute @workgroup_size(1)
-fn main(@builtin(global_invocation_id) param: vec3<u32>, @builtin(num_workgroups) num: vec3<u32>) {
+fn main(@builtin(global_invocation_id) param: vec3u, @builtin(num_workgroups) num: vec3u) {
     seed = pt_info.samples_per_pixel*param.x*param.y + param.x + param.y;
     let ident = mat3x3f(vec3f(1.0, 0.0, 0.0), vec3f(0.0, 1.0, 0.0), vec3f(0.0, 0.0, 1.0));
     var rd = ident * vec3f(
@@ -239,9 +239,6 @@ fn main(@builtin(global_invocation_id) param: vec3<u32>, @builtin(num_workgroups
         f32(num.y - param.y) - f32(num.y)/2f + rand(),
         f32(num.y)/2f
         );
-
-
-    //rd = normalize(rd);
 
     let ro = camera.position;
     var color = trace_path(ro, rd);
