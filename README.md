@@ -1,6 +1,6 @@
 # renderer
 
-Path traced renderer written in WebGPU and Rust.
+Path traced renderer in WebGPU and Rust.
 
 ![demo](demo.png)
 
