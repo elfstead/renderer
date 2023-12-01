@@ -7,3 +7,6 @@
 - BVH
 - tests for rust files
 - rewrite shaders in rust-gpu
+- abstractify bind group, buffer, and render pass logic
+- clean up bind groups
+- clean up state structs
