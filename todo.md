@@ -5,3 +5,5 @@
 - add denoising?
 - ReSTIR, ReBLUR
 - BVH
+- tests for rust files
+- rewrite shaders in rust-gpu
