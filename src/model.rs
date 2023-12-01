@@ -119,8 +119,8 @@ pub fn load<P: AsRef<Path>>(
     let obj_materials = obj_materials?;
     let vertices = obj_models
         .iter()
-        .map(|m| {
-            (0..m.mesh.positions.len() / 3).into_iter().map(|i| Vertex {
+        .flat_map(|m| {
+            (0..m.mesh.positions.len() / 3).map(|i| Vertex {
                 position: [
                     m.mesh.positions[i * 3],
                     m.mesh.positions[i * 3 + 1],
@@ -129,7 +129,6 @@ pub fn load<P: AsRef<Path>>(
                 _padding: 0,
             })
         })
-        .flatten()
         .collect::<Vec<Vertex>>();
 
     let mut mesh_info = Vec::new();
@@ -174,8 +173,7 @@ pub fn load<P: AsRef<Path>>(
 
     let indices = obj_models
         .iter()
-        .map(|m| m.mesh.indices.clone()) // should avoid unnecessary clone
-        .flatten()
+        .flat_map(|m| m.mesh.indices.clone()) // should avoid unnecessary clone
         .collect::<Vec<u32>>();
 
     let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {

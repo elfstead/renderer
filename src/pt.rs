@@ -32,9 +32,9 @@ pub struct Pt {
 
 impl Pt {
     pub fn new(device: &wgpu::Device, size: winit::dpi::PhysicalSize<u32>) -> Self {
-        let model_bind_group_layout = model::bind_group_layout(&device);
+        let model_bind_group_layout = model::bind_group_layout(device);
         let model_bind_group =
-            model::load(&device, &model_bind_group_layout, "res/cornell_box.obj").unwrap();
+            model::load(device, &model_bind_group_layout, "res/cornell_box.obj").unwrap();
 
         let camera = Camera {
             position: [250.0, 250.0, -500.0],
