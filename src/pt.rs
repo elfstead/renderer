@@ -148,6 +148,8 @@ impl Pt {
             layout: Some(&compute_pipeline_layout),
             module: &compute_shader,
             entry_point: "main",
+            compilation_options: Default::default(),
+            cache: None,
         });
 
         Pt {
@@ -224,7 +226,9 @@ fn create_pt_bufs(
 ) -> (wgpu::Buffer, wgpu::Buffer) {
     let pt_buffer = device.create_buffer(&wgpu::BufferDescriptor {
         label: Some("pt_buffer"),
-        size: (wgpu::TextureFormat::Rgba32Float.block_size(None).unwrap()
+        size: (wgpu::TextureFormat::Rgba32Float
+            .block_copy_size(None)
+            .unwrap()
             * size.width
             * size.height)
             .into(),

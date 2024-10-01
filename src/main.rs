@@ -1,27 +1,97 @@
 mod model;
 mod pt;
+use pollster::FutureExt;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
+use winit::event_loop::ActiveEventLoop;
 use winit::{
+    application::ApplicationHandler,
     event::*,
     event_loop::EventLoop,
     keyboard::*,
-    window::{Window, WindowBuilder},
+    window::{Window, WindowId},
 };
 
+#[derive(Default)]
+struct App {
+    state: Option<State>,
+}
+
+impl ApplicationHandler for App {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        let window = event_loop
+            .create_window(Window::default_attributes().with_title("Renderer"))
+            .unwrap();
+        self.state = Some(State::new(window).block_on());
+    }
+    fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+        match event {
+            WindowEvent::CloseRequested
+            | WindowEvent::KeyboardInput {
+                event:
+                    KeyEvent {
+                        state: ElementState::Pressed,
+                        logical_key: Key::Named(NamedKey::Escape),
+                        ..
+                    },
+                ..
+            } => event_loop.exit(),
+            WindowEvent::Resized(physical_size) => {
+                self.state.as_mut().unwrap().resize(physical_size);
+            }
+            WindowEvent::RedrawRequested => {
+                let now = Instant::now();
+                let dt = now - self.state.as_ref().unwrap().last_render_time;
+                self.state.as_mut().unwrap().last_render_time = now;
+                println!("frametime: {} ms", dt.as_millis());
+                self.state.as_mut().unwrap().update(dt);
+                match self.state.as_mut().unwrap().render() {
+                    Ok(_) => {}
+                    // Reconfigure the surface if it's lost or outdated
+                    Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+                        let size = self.state.as_ref().unwrap().size;
+                        self.state.as_mut().unwrap().resize(size);
+                    }
+                    // The system is out of memory, we should probably quit
+                    Err(wgpu::SurfaceError::OutOfMemory) => event_loop.exit(),
+                    // We're ignoring timeouts
+                    Err(wgpu::SurfaceError::Timeout) => log::warn!("Surface timeout"),
+                }
+            }
+            _ => (),
+        }
+    }
+    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
+        // tbh should remove this and decouple background math from refresh rate
+        if let Some(state) = self.state.as_ref() {
+            state.window.request_redraw();
+        }
+    }
+}
+async fn run() {
+    env_logger::init();
+    let event_loop = EventLoop::new().unwrap();
+    let mut app = App::default();
+
+    _ = event_loop.run_app(&mut app);
+}
+
 struct State {
-    window: Window,
+    window: Arc<Window>,
     size: winit::dpi::PhysicalSize<u32>,
-    surface: wgpu::Surface,
+    surface: wgpu::Surface<'static>,
     device: wgpu::Device,
     queue: wgpu::Queue,
     surface_config: wgpu::SurfaceConfiguration,
     render_pipeline: wgpu::RenderPipeline,
     pt: pt::Pt,
+    last_render_time: Instant,
 }
 
 impl State {
     async fn new(window: Window) -> Self {
-        let size = window.inner_size();
+        let window_arc = Arc::new(window);
+        let size = window_arc.inner_size();
 
         // Instance of wgpu.
         // Its primary use is to create Adapters and Surfaces.
@@ -29,7 +99,7 @@ impl State {
         let instance = wgpu::Instance::new(Default::default());
 
         // Draw to this surface, based on a raw window handle
-        let surface = unsafe { instance.create_surface(&window) }.unwrap();
+        let surface = instance.create_surface(window_arc.clone()).unwrap();
 
         // Handle to a physical graphics and/or compute device.
         // Used for request_device(), then not needed.
@@ -77,11 +147,13 @@ impl State {
             vertex: wgpu::VertexState {
                 module: &draw_shader,
                 entry_point: "vs_main",
+                compilation_options: Default::default(),
                 buffers: &[],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &draw_shader,
                 entry_point: "fs_main",
+                compilation_options: Default::default(),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: surface_config.format,
                     blend: Some(wgpu::BlendState::REPLACE),
@@ -100,10 +172,11 @@ impl State {
             depth_stencil: None,
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
+            cache: None,
         });
 
         State {
-            window,
+            window: window_arc,
             size,
             surface,
             device,
@@ -111,6 +184,7 @@ impl State {
             surface_config,
             render_pipeline,
             pt,
+            last_render_time: Instant::now(),
         }
     }
 
@@ -128,6 +202,8 @@ impl State {
         //todo: add movement
     }
 
+    // can make this non-mutating if I build the pt continuously in a separate thread
+    // (or rebuild from scratch every frame, in the case of making a real time version)
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture()?;
         let view = output
@@ -163,7 +239,7 @@ impl State {
 
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_bind_group(0, self.pt.bind_group(), &[]);
-            render_pass.draw(0..3, 0..1);
+            render_pass.draw(0..3, 0..1); // one triangle that covers whole screen
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
@@ -171,56 +247,6 @@ impl State {
 
         Ok(())
     }
-}
-
-async fn run() {
-    env_logger::init();
-    let event_loop = EventLoop::new().unwrap();
-    let window = WindowBuilder::new().build(&event_loop).unwrap();
-    let mut state = State::new(window).await;
-    let mut last_render_time = Instant::now();
-
-    _ = event_loop.run(move |event, control_flow| match event {
-        Event::WindowEvent { ref event, .. } => match event {
-            WindowEvent::CloseRequested
-            | WindowEvent::KeyboardInput {
-                event:
-                    KeyEvent {
-                        state: ElementState::Pressed,
-                        logical_key: Key::Named(NamedKey::Escape),
-                        ..
-                    },
-                ..
-            } => control_flow.exit(),
-            WindowEvent::Resized(physical_size) => {
-                state.resize(*physical_size);
-            }
-            WindowEvent::RedrawRequested => {
-                let now = Instant::now();
-                let dt = now - last_render_time;
-                last_render_time = now;
-                println!("frametime: {} ms", dt.as_millis());
-                state.update(dt);
-                match state.render() {
-                    Ok(_) => {}
-                    // Reconfigure the surface if it's lost or outdated
-                    Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
-                        state.resize(state.size)
-                    }
-                    // The system is out of memory, we should probably quit
-                    Err(wgpu::SurfaceError::OutOfMemory) => control_flow.exit(),
-                    // We're ignoring timeouts
-                    Err(wgpu::SurfaceError::Timeout) => log::warn!("Surface timeout"),
-                }
-            }
-            _ => (),
-        },
-        // tbh should remove this and decouple background math from refresh rate
-        Event::AboutToWait => {
-            state.window.request_redraw();
-        }
-        _ => (),
-    });
 }
 
 fn main() {
