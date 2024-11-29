@@ -3,11 +3,10 @@ mod pt;
 use pollster::FutureExt;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use winit::event_loop::ActiveEventLoop;
 use winit::{
     application::ApplicationHandler,
     event::*,
-    event_loop::EventLoop,
+    event_loop::{ActiveEventLoop, EventLoop},
     keyboard::*,
     window::{Window, WindowId},
 };
@@ -61,7 +60,7 @@ impl ApplicationHandler for App {
             _ => (),
         }
     }
-    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
+        fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
         // tbh should remove this and decouple background math from refresh rate
         if let Some(state) = self.state.as_ref() {
             state.window.request_redraw();

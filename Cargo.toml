@@ -13,5 +13,4 @@ log = "0.4"
 pollster = "0.3"
 tobj = { version = "4.0", features = ["async"] }
 wgpu = "22.1"
-winit = { version = "0.30", features = ["rwh_05"] }
-nix = { version = "0.26.4", features = ["fs"] } # winit should do this automatically..
+winit = "0.30"

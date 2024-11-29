@@ -1,10 +1,12 @@
-- why is frametime sometimes 0 and sometimes double? race condition?
-- add reflective materials?
-- add movement?
+- What is up with clamp and brightness?
+- Better light sampling code
+- BVH
 - add better random algo? (low discrepancy sequence, e.g. sobol)
 - add denoising?
 - ReSTIR, ReBLUR
-- BVH
+- why is frametime sometimes 0 and sometimes double? race condition?
+- add reflective materials?
+- add movement?
 - tests for rust files
 - rewrite shaders in rust-gpu
 - abstractify bind group, buffer, and render pass logic

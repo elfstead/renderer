@@ -95,17 +95,7 @@ fn apply_lighting(pos: vec3f, nor: vec3f) -> vec3f {
                 let v1: vec3f = vertices[vertex_offset + indices[j+1]].pos;
                 let v2: vec3f = vertices[vertex_offset + indices[j+2]].pos;
 
-                /*
-                let a = length(v1-v0);
-                let b = length(v2-v1);
-                let c = length(v0-v2);
-
-                let s = (a + b + c/2.0);
-                let area = sqrt(s*(s-a)*(s-b)*(s-c)); 
-                let importance = area*length(light_color);
-                */
-
-                // pick a random point in the triangle and see if it illuminates the point we are interested in
+                // pick a random light point in the triangle
 
                 // barycentric coordinates for homogenous probability over the surface
                 // https://people.cs.kuleuven.be/~philip.dutre/GI/TotalCompendium.pdf
@@ -116,11 +106,14 @@ fn apply_lighting(pos: vec3f, nor: vec3f) -> vec3f {
                 let gamma = r2*sqrt(r1);
                 let point = alpha*v0 + beta*v1 + gamma*v2;
 
+                // see if object point is illumineted by the light point
                 let dir = point - pos;
 
                 let inters = closest_intersection(pos, dir);
 
+                // if object is illuminated
                 if (inters.distance >= length(dir) - EPSILON) {
+                    // calculate lighting
                     var add = light_color * 10000.0 * max(dot(nor,normalize(dir)), 0.0); //magic param, why am i multiplying by SO MUCH. Something must be wrong
                     add /= (4.0*pow(length(dir), 2.0));
                     color += add;
