@@ -62,9 +62,9 @@ impl ApplicationHandler for App {
     }
         fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
         // tbh should remove this and decouple background math from refresh rate
-        if let Some(state) = self.state.as_ref() {
+        match self.state.as_ref() { Some(state) => {
             state.window.request_redraw();
-        }
+        } _ => {}}
     }
 }
 async fn run() {
