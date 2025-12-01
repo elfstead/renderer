@@ -55,16 +55,20 @@ impl ApplicationHandler for App {
                     Err(wgpu::SurfaceError::OutOfMemory) => event_loop.exit(),
                     // We're ignoring timeouts
                     Err(wgpu::SurfaceError::Timeout) => log::warn!("Surface timeout"),
+                    Err(wgpu::SurfaceError::Other) => log::warn!("Other surface error"),
                 }
             }
             _ => (),
         }
     }
-        fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
+    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
         // tbh should remove this and decouple background math from refresh rate
-        match self.state.as_ref() { Some(state) => {
-            state.window.request_redraw();
-        } _ => {}}
+        match self.state.as_ref() {
+            Some(state) => {
+                state.window.request_redraw();
+            }
+            _ => {}
+        }
     }
 }
 async fn run() {
@@ -95,7 +99,7 @@ impl State {
         // Instance of wgpu.
         // Its primary use is to create Adapters and Surfaces.
         // Does not have to be kept alive.
-        let instance = wgpu::Instance::new(Default::default());
+        let instance = wgpu::Instance::new(&Default::default());
 
         // Draw to this surface, based on a raw window handle
         let surface = instance.create_surface(window_arc.clone()).unwrap();
@@ -112,10 +116,7 @@ impl State {
             .unwrap();
 
         // Actual connection to the GPU
-        let (device, queue) = adapter
-            .request_device(&Default::default(), None)
-            .await
-            .unwrap();
+        let (device, queue) = adapter.request_device(&Default::default()).await.unwrap();
 
         // This is needed for color format, size, alpha, other stuff
         let surface_config = surface
@@ -145,13 +146,13 @@ impl State {
             layout: Some(&render_pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &draw_shader,
-                entry_point: "vs_main",
+                entry_point: Some("vs_main"),
                 compilation_options: Default::default(),
                 buffers: &[],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &draw_shader,
-                entry_point: "fs_main",
+                entry_point: Some("fs_main"),
                 compilation_options: Default::default(),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: surface_config.format,
@@ -230,6 +231,7 @@ impl State {
                         load: wgpu::LoadOp::Load,
                         store: wgpu::StoreOp::Store,
                     },
+                    depth_slice: None,
                 })],
                 depth_stencil_attachment: None,
                 occlusion_query_set: None,

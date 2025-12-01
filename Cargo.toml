@@ -8,9 +8,9 @@ edition = "2024"
 [dependencies]
 bytemuck = { version = "1.17", features = [ "derive" ] }
 env_logger = "0.11"
-glam = "0.29"
+glam = "0.30"
 log = "0.4"
-pollster = "0.3"
+pollster = "0.4"
 tobj = { version = "4.0", features = ["async"] }
-wgpu = "22.1"
+wgpu = "27"
 winit = "0.30"
